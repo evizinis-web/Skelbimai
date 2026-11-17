@@ -1,0 +1,38 @@
+name: Tikrinti skelbimus 3 kartus per diena
+
+on:
+  schedule:
+    - cron: '0 5,10,15 * * *'
+  workflow_dispatch:
+  push:
+    paths:
+      - 'nustatymai.json'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Parsisiųsti failus
+        uses: actions/checkout@v4
+
+      - name: Paruošti Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Įdiegti bibliotekas
+        run: pip install requests beautifulsoup4
+
+      - name: Paleisti skelbimų rinkimą
+        run: python atnaujinti.py
+
+      - name: Išsaugoti atnaujintą svetainę
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add index.html
+          git commit -m "Automatinis skelbimu atnaujinimas" || exit 0
+          git push
