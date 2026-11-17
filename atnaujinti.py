@@ -13,7 +13,7 @@ visi_rezultatai = {}
 
 def tikrinti_cvonline(raktazodziai_list):
     rasti = {}
-    url = "https://cvonline.lt"
+    url = "https://" + "www.cvonline.lt/api/v1/vacancy-search-service/search"
     antrastes = {"User-Agent": "Mozilla/5.0"}
     
     for zodis in raktazodziai_list:
@@ -32,7 +32,7 @@ def tikrinti_cvonline(raktazodziai_list):
                         "miestas": d.get("townName", "Lietuva"),
                         "galioja": galioja_iki,
                         "ikeltas": ikeltas,
-                        "nuoroda": f"https://cvonline.lt{sk_id}"
+                        "nuoroda": "https://" + f"www.cvonline.lt/lt/vacancy/{sk_id}"
                     }
         except Exception as e:
             print(f"Klaida CV-Online ({zodis}): {e}")
@@ -46,7 +46,7 @@ def tikrinti_cvbankas(raktazodziai_list):
     antrastes = {"User-Agent": "Mozilla/5.0"}
     
     for zodis in raktazodziai_list:
-        url = f"https://cvbankas.lt{zodis}"
+        url = "https://" + f"www.cvbankas.lt/?keyw={zodis}"
         try:
             atsakas = requests.get(url, headers=antrastes, timeout=15)
             soup = BeautifulSoup(atsakas.text, "html.parser")
