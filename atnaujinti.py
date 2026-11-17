@@ -10,10 +10,14 @@ with open("nustatymai.json", "r", encoding="utf-8") as f:
 raktazodziai = [r.strip().lower() for r in nustatymai.get("raktazodziai", ["cnc", "frezavimas", "tekinimas"]) if r.strip()]
 visi_rezultatai = {}
 
+antrastes = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Accept-Language": "lt-LT,lt;q=0.9"
+}
+
 def tikrinti_cvonline(raktazodziai_list):
     rasti = {}
     url = "https://" + "www.cvonline.lt/api/v1/vacancy-search-service/search"
-    antrastes = {"User-Agent": "Mozilla/5.0"}
     
     for zodis in raktazodziai_list:
         parametrai = {"limit": 50, "offset": 0, "keywords[]": zodis, "sorting": "LATEST"}
@@ -24,7 +28,7 @@ def tikrinti_cvonline(raktazodziai_list):
                 if sk_id not in rasti:
                     galioja_iki = d.get("expirationDate", "")[:10] if d.get("expirationDate") else "Nenurodyta"
                     ikeltas = d.get("publishDate", "")[:19] if d.get("publishDate") else ""
-                    miestas = d.get("townName") or "Nenurodyta"
+                    miestas = d.get("townName") or "Lietuva"
                     rasti[sk_id] = {
                         "id": f"cvo_{sk_id}",
                         "pavadinimas": d.get("positionTitle", "Be pavadinimo"),
@@ -43,34 +47,35 @@ def tikrinti_cvonline(raktazodziai_list):
 
 def tikrinti_cvbankas(raktazodziai_list):
     rasti = {}
-    antrastes = {"User-Agent": "Mozilla/5.0"}
-    
     for zodis in raktazodziai_list:
         url = "https://" + f"www.cvbankas.lt/?keyw={zodis}"
         try:
             atsakas = requests.get(url, headers=antrastes, timeout=15)
             soup = BeautifulSoup(atsakas.text, "html.parser")
-            straipsniai = soup.find_all("article", class_="list_article")
+            nuorodos = soup.find_all("a", class_="list_a")
             
-            for art in straipsniai:
-                a_tag = art.find("a", class_="list_a")
-                if not a_tag:
+            for a_tag in nuorodos:
+                nuoroda = a_tag.get("href", "")
+                if not nuoroda:
                     continue
-                nuoroda = a_tag["href"]
+                if not nuoroda.startswith("http"):
+                    nuoroda = "https://" + "www.cvbankas.lt" + nuoroda
+                    
                 sk_id = re.sub(r'\D', '', nuoroda)[-8:] or nuoroda
+                tekstas = a_tag.get_text(" | ", strip=True)
+                miestas = "Vilnius" if "Vilnius" in tekstas or "Vilniuje" in tekstas else ("Kaunas" if "Kaunas" in tekstas else ("Klaipėda" if "Klaipėda" in tekstas else "Lietuva"))
                 
                 if sk_id not in rasti:
-                    pav_tag = art.find("h3", class_="list_h3")
-                    imone_tag = art.find("span", class_="dib mt5")
-                    miestas_tag = art.find("span", class_="list_city")
-                    laikas_tag = art.find("span", class_="txt_list_2")
-                    
+                    pav_tag = a_tag.find("h3", class_="list_h3")
+                    imone_tag = a_tag.find("span", class_="dib mt5")
+                    pavadinimas = pav_tag.text.strip() if pav_tag else tekstas[:80]
+                    imone = imone_tag.text.strip() if imone_tag else "CVbankas.lt"
                     rasti[sk_id] = {
                         "id": f"cvb_{sk_id}",
-                        "pavadinimas": pav_tag.text.strip() if pav_tag else "Be pavadinimo",
-                        "imone": imone_tag.text.strip() if imone_tag else "Nenurodyta įmonė",
-                        "miestas": miestas_tag.text.strip() if miestas_tag else "Nenurodyta",
-                        "galioja": laikas_tag.text.strip() if laikas_tag else "Žiūrėti skelbime",
+                        "pavadinimas": pavadinimas,
+                        "imone": imone,
+                        "miestas": miestas,
+                        "galioja": "Žiūrėti skelbime",
                         "ikeltas": "",
                         "nuoroda": nuoroda
                     }
@@ -81,7 +86,6 @@ def tikrinti_cvbankas(raktazodziai_list):
 
 def tikrinti_cvmarket(raktazodziai_list):
     rasti = {}
-    antrastes = {"User-Agent": "Mozilla/5.0"}
     base = "https://" + "www.cvmarket.lt"
     
     for zodis in raktazodziai_list:
@@ -99,13 +103,16 @@ def tikrinti_cvmarket(raktazodziai_list):
                 pilna_nuoroda = href if href.startswith("http") else base + href
                 sk_id = re.sub(r'\D', '', pilna_nuoroda)[-7:] or pilna_nuoroda
                 
+                h2_tag = k.find("h2")
+                pavadinimas = h2_tag.get_text(strip=True) if h2_tag else a_tag.get_text(" ", strip=True)[:70]
+                
                 tekstas = k.get_text(" | ", strip=True)
                 miestas = "Vilnius" if "Vilnius" in tekstas else ("Kaunas" if "Kaunas" in tekstas else ("Klaipėda" if "Klaipėda" in tekstas else "Lietuva"))
                 
-                if sk_id not in rasti and len(a_tag.text.strip()) > 3:
+                if sk_id not in rasti and len(pavadinimas) > 3:
                     rasti[sk_id] = {
                         "id": f"cvm_{sk_id}",
-                        "pavadinimas": a_tag.text.strip(),
+                        "pavadinimas": pavadinimas,
                         "imone": "CVmarket.lt",
                         "miestas": miestas,
                         "galioja": "Žiūrėti skelbime",
@@ -128,14 +135,15 @@ html_kodas = f"""<!DOCTYPE html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="apple-mobile-web-app-capable" content="yes">
     <title>Darbo Skelbimai</title>
     <style>
         body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f4f5f7; margin: 0; padding: 16px; color: #172b4d; }}
         .container {{ max-width: 1100px; margin: 0 auto; }}
         .filtrai {{ background: #ffffff; padding: 18px; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); margin-bottom: 20px; display: flex; flex-wrap: wrap; gap: 15px; align-items: flex-end; }}
-        .laukelis {{ flex: 1; min-width: 200px; }}
+        .laukelis {{ flex: 1; min-width: 220px; }}
         .laukelis label {{ display: block; font-size: 13px; font-weight: bold; margin-bottom: 5px; color: #5e6c84; }}
-        .laukelis input, .laukelis select {{ width: 100%; padding: 10px; border: 1px solid #dfe1e6; border-radius: 6px; font-size: 15px; box-sizing: border-box; background: #fff; }}
+        .laukelis input {{ width: 100%; padding: 10px; border: 1px solid #dfe1e6; border-radius: 6px; font-size: 15px; box-sizing: border-box; background: #fff; }}
         .portalo-sekcija {{ background: #ffffff; padding: 18px; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); margin-bottom: 20px; overflow-x: auto; }}
         .portalo-pavadinimas {{ font-size: 19px; margin-top: 0; padding-bottom: 10px; border-bottom: 2px solid #ebecf0; }}
         table {{ width: 100%; border-collapse: collapse; min-width: 650px; }}
@@ -144,11 +152,13 @@ html_kodas = f"""<!DOCTYPE html>
         tr.atidarytas {{ background-color: #f4f5f7; color: #7a869a; }}
         tr.atidarytas a {{ color: #7a869a; }}
         .skelbimo-nuoroda {{ font-weight: 600; color: #0052cc; text-decoration: none; font-size: 15px; display: block; margin-bottom: 4px; }}
+        .skelbimo-nuoroda:hover {{ text-decoration: underline; }}
         .imone-info {{ font-size: 12px; color: #6b778c; }}
         .statusas-badge {{ display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; }}
         .naujas {{ background: #e3fcef; color: #006644; }}
         .matytas {{ background: #dfe1e6; color: #42526e; }}
         .pastaba-input {{ width: 100%; padding: 8px; border: 1px solid #dfe1e6; border-radius: 4px; font-size: 13px; box-sizing: border-box; }}
+        .pastaba-input:focus {{ border-color: #0052cc; outline: none; background: #fff; }}
         .laikas {{ font-size: 12px; color: #6b778c; margin-bottom: 12px; }}
     </style>
 </head>
@@ -162,8 +172,8 @@ html_kodas = f"""<!DOCTYPE html>
             <input type="text" id="filtras-miestas" value="Vilnius" placeholder="Pvz.: Vilnius (palikite tuščią visiems)" oninput="issaugotiIrFiltruoti()">
         </div>
         <div class="laukelis">
-            <label>Papildoma paieška tekste:</label>
-            <input type="text" id="filtras-zodis" placeholder="Pvz.: operatorius, programuotojas..." oninput="issaugotiIrFiltruoti()">
+            <label>Filtruoti pagal žodžius (galima per kablelį):</label>
+            <input type="text" id="filtras-zodis" placeholder="Pvz.: cnc, operatorius, programuotojas" oninput="issaugotiIrFiltruoti()">
         </div>
     </div>
 
@@ -173,7 +183,6 @@ html_kodas = f"""<!DOCTYPE html>
 <script>
     const duomenys = {duomenys_json};
 
-    // Užkrauname išsaugotą miestą (pagal nutylėjimą Vilnius)
     const issaugotasMiestas = localStorage.getItem('pasirinktas_miestas');
     if (issaugotasMiestas !== null) {{
         document.getElementById('filtras-miestas').value = issaugotasMiestas;
@@ -210,14 +219,14 @@ html_kodas = f"""<!DOCTYPE html>
         const pastabos = gautiPastabas();
         const ieskomasMiestas = document.getElementById('filtras-miestas').value.trim().toLowerCase();
         const ieskomasZodis = document.getElementById('filtras-zodis').value.trim().toLowerCase();
+        const zodziai = ieskomasZodis.split(',').map(z => z.trim()).filter(z => z);
         
         konteineris.innerHTML = '';
 
         for (const [portalas, sarasas] of Object.entries(duomenys)) {{
-            // Filtruojame pagal miestą ir papildomą žodį tiesiai naršyklėje
             const filtruotas = sarasas.filter(s => {{
-                const tinkaMiestas = !ieskomasMiestas || (s.miestas && s.miestas.toLowerCase().includes(ieskomasMiestas));
-                const tinkaZodis = !ieskomasZodis || (s.pavadinimas.toLowerCase().includes(ieskomasZodis) || s.imone.toLowerCase().includes(ieskomasZodis));
+                const tinkaMiestas = !ieskomasMiestas || (s.miestas && (s.miestas.toLowerCase().includes(ieskomasMiestas) || s.miestas.toLowerCase() === 'lietuva'));
+                const tinkaZodis = zodziai.length === 0 || zodziai.some(z => s.pavadinimas.toLowerCase().includes(z) || s.imone.toLowerCase().includes(z));
                 return tinkaMiestas && tinkaZodis;
             }});
 
