@@ -119,6 +119,9 @@ for svetaine in svetaines:
         visi_rezultatai["CV-Online.lt"] = tikrinti_cvonline(raktazodziai)
     elif "cvbankas.lt" in sv_lower:
         visi_rezultatai["CVbankas.lt"] = tikrinti_cvbankas(raktazodziai)
+    elif "cvmarket.lt" in sv_lower:
+        visi_rezultatai["CVmarket.lt"] = tikrinti_cvmarket(raktazodziai)
+
     else:
         visi_rezultatai[svetaine] = []
 
