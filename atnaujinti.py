@@ -11,6 +11,40 @@ svetaines = nustatymai.get("svetaines", [])
 raktazodziai = [r.strip().lower() for r in nustatymai.get("raktazodziai", []) if r.strip()]
 visi_rezultatai = {}
 
+def tikrinti_cvmarket(raktazodziai_list):
+    rasti = {}
+    antrastes = {"User-Agent": "Mozilla/5.0"}
+    base_url = "https://" + "www.cvmarket.lt"
+    
+    for zodis in raktazodziai_list:
+        url = base_url + f"/darbo-skelbimai?op=search&search%5Bkeyword%5D={zodis}"
+        try:
+            atsakas = requests.get(url, headers=antrastes, timeout=15)
+            soup = BeautifulSoup(atsakas.text, "html.parser")
+            nuorodos = soup.find_all("a", href=True)
+            
+            for a in nuorodos:
+                href = a["href"]
+                if "/darbo-skelbimas/" in href or re.search(r'-\d{5,}$', href):
+                    pilna_nuoroda = href if href.startswith("http") else base_url + href
+                    sk_id = re.sub(r'\D', '', pilna_nuoroda)[-7:] or pilna_nuoroda
+                    pavadinimas = a.text.strip()
+                    
+                    if sk_id not in rasti and len(pavadinimas) > 4:
+                        rasti[sk_id] = {
+                            "id": f"cvm_{sk_id}",
+                            "pavadinimas": pavadinimas,
+                            "imone": "CVmarket skelbimas",
+                            "miestas": "Lietuva",
+                            "galioja": "Žiūrėti skelbime",
+                            "ikeltas": "",
+                            "nuoroda": pilna_nuoroda
+                        }
+        except Exception as e:
+            print(f"Klaida CVmarket ({zodis}): {e}")
+            
+    return list(rasti.values())
+
 def tikrinti_cvonline(raktazodziai_list):
     rasti = {}
     url = "https://" + "www.cvonline.lt/api/v1/vacancy-search-service/search"
